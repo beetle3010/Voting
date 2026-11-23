@@ -37,18 +37,13 @@ function doPost(e) {
 function doGet(e) {
   const me = e && e.parameter && e.parameter.voter ? String(e.parameter.voter) : "";
   const rows = sheet_().getDataRange().getValues().slice(1);
-  // Pro Person (Name, Groß-/Kleinschreibung egal) und Variante zählt nur die letzte Stimme –
-  // auch wenn jemand vom Handy und vom Laptop abstimmt.
-  const latest = {}, mine = {};
-  rows.forEach(r => {
-    const voter = String(r[1]), name = String(r[2]).trim().toLowerCase(), design = String(r[3]), stars = Number(r[4]);
-    latest[(name || voter) + "|" + design] = { design: design, stars: stars };
-    if (me && voter === me) mine[design] = stars;
-  });
-  const agg = {};
+  const latest = {}; // letzte Stimme je Person und Variante zählt
+  rows.forEach(r => { latest[r[1] + "|" + r[3]] = { voter: String(r[1]), design: String(r[3]), stars: Number(r[4]) }; });
+  const agg = {}, mine = {};
   Object.values(latest).forEach(v => {
     agg[v.design] = agg[v.design] || { sum: 0, n: 0 };
     agg[v.design].sum += v.stars; agg[v.design].n++;
+    if (me && v.voter === me) mine[v.design] = v.stars;
   });
   const results = {};
   Object.keys(agg).forEach(k => results[k] = { avg: agg[k].sum / agg[k].n, n: agg[k].n });
