@@ -1,3 +1,4 @@
+/** @OnlyCurrentDoc */
 // Speichert die Stimmen der Wohnzimmer-Abstimmung in diesem Google Sheet.
 // Einrichtung: Google Sheet anlegen -> Erweiterungen -> Apps Script -> diesen Code einfügen ->
 // Bereitstellen -> Neue Bereitstellung -> Typ "Web-App" -> Ausführen als: Ich, Zugriff: Jeder -> URL kopieren.
