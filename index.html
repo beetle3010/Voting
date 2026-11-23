@@ -120,29 +120,49 @@ function paint(){
  const ranked=V.filter(v=>results[v.id]&&results[v.id].n).sort((a,b)=>results[b.id].avg-results[a.id].avg);
  document.getElementById("ranklist").innerHTML=ranked.length?ranked.map(v=>`<li><a href="#${v.id}">${esc(v.name)}</a> – Ø ${results[v.id].avg.toFixed(1)} ★ (${results[v.id].n})</li>`).join(""):"<li>Noch keine Stimmen.</li>";
 }
+let seq=0,inflight=0;
 async function load(){
  const st=document.getElementById("status");
  if(!SCRIPT_URL){st.textContent="Hinweis: Die gemeinsame Auswertung ist noch nicht verbunden – deine Sterne werden nur in diesem Browser gespeichert.";
   results={};for(const v of V){if(mine[v.id]!==undefined)results[v.id]={avg:mine[v.id],n:1}}paint();return}
- try{const r=await fetch(SCRIPT_URL+"?t="+Date.now());results=await r.json();st.textContent="Aktualisiert "+new Date().toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});}
- catch(e){st.textContent="Ergebnisse konnten gerade nicht geladen werden."}
+ const my=++seq;
+ try{
+  const r=await fetch(SCRIPT_URL+"?voter="+encodeURIComponent(voter)+"&t="+Date.now(),{cache:"no-store"});
+  const data=await r.json();
+  if(my!==seq)return; // eine neuere Abfrage ist schon unterwegs – alte Antwort verwerfen
+  results=data.results||data;
+  st.textContent="Aktualisiert "+new Date().toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
+  // Eigene Stimmen prüfen: was der Server nicht hat, wird erneut gesendet
+  if(data.mine&&!inflight){
+   for(const v of V){if(mine[v.id]!==undefined&&data.mine[v.id]!==mine[v.id])send(v.id,mine[v.id],true)}
+  }
+ }catch(e){st.textContent="Ergebnisse konnten gerade nicht geladen werden."}
  paint();
+}
+async function send(id,s,retry){
+ const name=nameEl.value.trim()||ls.get("wz-name")||"";
+ const saved=document.querySelector(`#${id} .saved`);
+ inflight++;saved.textContent=retry?"wird nachgetragen…":"speichere…";
+ try{
+  await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({voter,name,design:id,stars:s})});
+  saved.textContent="✓ gespeichert";
+ }catch(e){saved.textContent="Fehler – wird erneut versucht"}
+ inflight--;
+ if(!inflight)setTimeout(load,800);
 }
 async function vote(id,s){
  const name=nameEl.value.trim();
  if(!name){nameEl.focus();nameEl.placeholder="Bitte zuerst deinen Namen eingeben";return}
  mine[id]=s;ls.set("wz-mine",JSON.stringify(mine));paint();
- const saved=document.querySelector(`#${id} .saved`);saved.textContent="speichere…";
- if(SCRIPT_URL){try{await fetch(SCRIPT_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"text/plain"},body:JSON.stringify({voter,name,design:id,stars:s})});saved.textContent="✓ gespeichert";setTimeout(load,1200)}
-  catch(e){saved.textContent="Fehler – bitte nochmal"}}
- else{saved.textContent="✓ lokal gespeichert";load()}
+ if(SCRIPT_URL)send(id,s,false);
+ else{document.querySelector(`#${id} .saved`).textContent="✓ lokal gespeichert";load()}
 }
 list.addEventListener("click",e=>{
  const b=e.target.closest(".stars button");if(b){vote(b.dataset.v,+b.dataset.s);return}
  const p=e.target.closest(".pics button");if(p){const d=document.getElementById("zoom");d.querySelector("img").src=p.dataset.src;d.showModal()}
 });
 document.getElementById("zoom").addEventListener("click",e=>e.currentTarget.close());
-paint();load();setInterval(()=>{if(SCRIPT_URL&&!document.hidden)load()},30000);
+paint();load();setInterval(()=>{if(SCRIPT_URL&&!document.hidden&&!inflight)load()},30000);
 }
 </script>
 </body>

@@ -1,7 +1,7 @@
 /** @OnlyCurrentDoc */
 // Speichert die Stimmen der Wohnzimmer-Abstimmung in diesem Google Sheet.
-// Einrichtung: Google Sheet anlegen -> Erweiterungen -> Apps Script -> diesen Code einfügen ->
-// Bereitstellen -> Neue Bereitstellung -> Typ "Web-App" -> Ausführen als: Ich, Zugriff: Jeder -> URL kopieren.
+// Update einspielen: Code ersetzen -> Speichern -> Bereitstellen -> Bereitstellungen verwalten ->
+// Stift-Symbol -> Version: "Neue Version" -> Bereitstellen (die URL bleibt gleich).
 
 function sheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -13,30 +13,39 @@ function sheet_() {
   return sh;
 }
 
+function json_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doPost(e) {
+  if (!e || !e.postData) return json_({ ok: false, error: "no data" });
   const d = JSON.parse(e.postData.contents);
   const stars = Math.max(0, Math.min(5, Math.round(Number(d.stars))));
   const name = String(d.name || "").slice(0, 60);
   const design = String(d.design || "").slice(0, 40);
   const voter = String(d.voter || "").slice(0, 60);
-  if (!design || !voter) return ContentService.createTextOutput("missing");
+  if (!design || !voter) return json_({ ok: false, error: "missing" });
+  // Früher: waitLock(5000) – bei vielen gleichzeitigen Stimmen lief das in einen Fehler
+  // und die Stimme ging verloren. appendRow braucht keine Sperre; wir warten nur kurz, wenn möglich.
   const lock = LockService.getScriptLock();
-  lock.waitLock(5000);
+  const locked = lock.tryLock(20000);
   try { sheet_().appendRow([new Date(), voter, name, design, stars]); }
-  finally { lock.releaseLock(); }
-  return ContentService.createTextOutput("ok");
+  finally { if (locked) lock.releaseLock(); }
+  return json_({ ok: true });
 }
 
-function doGet() {
+function doGet(e) {
+  const me = e && e.parameter && e.parameter.voter ? String(e.parameter.voter) : "";
   const rows = sheet_().getDataRange().getValues().slice(1);
   const latest = {}; // letzte Stimme je Person und Variante zählt
-  rows.forEach(r => { latest[r[1] + "|" + r[3]] = { design: r[3], stars: Number(r[4]) }; });
-  const agg = {};
+  rows.forEach(r => { latest[r[1] + "|" + r[3]] = { voter: String(r[1]), design: String(r[3]), stars: Number(r[4]) }; });
+  const agg = {}, mine = {};
   Object.values(latest).forEach(v => {
     agg[v.design] = agg[v.design] || { sum: 0, n: 0 };
     agg[v.design].sum += v.stars; agg[v.design].n++;
+    if (me && v.voter === me) mine[v.design] = v.stars;
   });
-  const out = {};
-  Object.keys(agg).forEach(k => out[k] = { avg: agg[k].sum / agg[k].n, n: agg[k].n });
-  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+  const results = {};
+  Object.keys(agg).forEach(k => results[k] = { avg: agg[k].sum / agg[k].n, n: agg[k].n });
+  return json_({ results: results, mine: mine });
 }
