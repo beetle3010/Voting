@@ -25,12 +25,19 @@ function doPost(e) {
   const design = String(d.design || "").slice(0, 40);
   const voter = String(d.voter || "").slice(0, 60);
   if (!design || !voter) return json_({ ok: false, error: "missing" });
-  // Früher: waitLock(5000) – bei vielen gleichzeitigen Stimmen lief das in einen Fehler
-  // und die Stimme ging verloren. appendRow braucht keine Sperre; wir warten nur kurz, wenn möglich.
+  // Eine Zeile pro Person (Gerät) und Variante: vorhandene Zeile wird aktualisiert statt neu angehängt.
   const lock = LockService.getScriptLock();
   const locked = lock.tryLock(20000);
-  try { sheet_().appendRow([new Date(), voter, name, design, stars]); }
-  finally { if (locked) lock.releaseLock(); }
+  try {
+    const sh = sheet_();
+    const data = sh.getDataRange().getValues();
+    let row = -1;
+    for (let i = data.length - 1; i >= 1; i--) {
+      if (String(data[i][1]) === voter && String(data[i][3]) === design) { row = i + 1; break; }
+    }
+    if (row > 0) sh.getRange(row, 1, 1, 5).setValues([[new Date(), voter, name, design, stars]]);
+    else sh.appendRow([new Date(), voter, name, design, stars]);
+  } finally { if (locked) lock.releaseLock(); }
   return json_({ ok: true });
 }
 
