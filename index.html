@@ -96,7 +96,11 @@ const miniStars=a=>{const r=half(a);let h='<span class="mini" aria-label="'+r.to
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
 let voter=ls.get("wz-voter");if(!voter){voter=Math.random().toString(36).slice(2)+Date.now().toString(36);ls.set("wz-voter",voter)}
-let mine={};try{mine=JSON.parse(ls.get("wz-mine")||"{}")}catch(e){}
+// Eigene Stimmen werden zusammen mit der Kennung gespeichert, unter der sie abgegeben wurden.
+// Nur wenn beide zusammenpassen, darf die Seite fehlende Stimmen nachsenden – sonst entstünden Doppelte.
+let mine={},mineOwned=false;
+try{const st=JSON.parse(ls.get("wz-mine2")||"null");if(st&&st.voter===voter){mine=st.votes||{};mineOwned=true}
+ else{mine=JSON.parse(ls.get("wz-mine")||"{}")}}catch(e){}
 let results={};
 const nameEl=document.getElementById("name");nameEl.value=ls.get("wz-name")||"";
 nameEl.addEventListener("input",()=>ls.set("wz-name",nameEl.value.trim()));
@@ -136,7 +140,7 @@ async function load(){
   results=data.results||data;
   st.textContent="Aktualisiert "+new Date().toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
   // Eigene Stimmen prüfen: was der Server nicht hat, wird erneut gesendet
-  if(data.mine&&!inflight){
+  if(data.mine&&!inflight&&mineOwned&&ls.get("wz-voter")===voter){
    for(const v of V){if(mine[v.id]!==undefined&&data.mine[v.id]!==mine[v.id])send(v.id,mine[v.id],true)}
   }
  }catch(e){st.textContent="Ergebnisse konnten gerade nicht geladen werden."}
@@ -156,7 +160,7 @@ async function send(id,s,retry){
 async function vote(id,s){
  const name=nameEl.value.trim();
  if(!name){nameEl.focus();nameEl.placeholder="Bitte zuerst deinen Namen eingeben";return}
- mine[id]=s;ls.set("wz-mine",JSON.stringify(mine));paint();
+ mine[id]=s;mineOwned=true;ls.set("wz-mine2",JSON.stringify({voter,votes:mine}));paint();
  if(SCRIPT_URL)send(id,s,false);
  else{document.querySelector(`#${id} .saved`).textContent="✓ lokal gespeichert";load()}
 }
